@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Claude Terminal Zen</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#ffffff">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+            background: #fafafa;
+            height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .status-bar {
+            background: white;
+            border-bottom: 1px solid #e5e5e5;
+            padding: 12px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 14px;
+            color: #666;
+        }
+
+        .project-info {
+            display: flex;
+            gap: 20px;
+        }
+
+        .role-switcher {
+            display: flex;
+            gap: 8px;
+        }
+
+        .role-btn {
+            padding: 4px 12px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+
+        .role-btn.active {
+            background: #007AFF;
+            color: white;
+            border-color: #007AFF;
+        }
+
+        .conversation-area {
+            flex: 1;
+            padding: 24px;
+            overflow-y: auto;
+        }
+
+        .message {
+            margin-bottom: 16px;
+            line-height: 1.6;
+        }
+
+        .message.user {
+            background: #f0f0f0;
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-left: 60px;
+        }
+
+        .message.assistant {
+            background: white;
+            border: 1px solid #e5e5e5;
+            padding: 12px 16px;
+            border-radius: 12px;
+            margin-right: 60px;
+        }
+
+        .input-area {
+            background: white;
+            border-top: 1px solid #e5e5e5;
+            padding: 16px 24px;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        textarea {
+            flex: 1;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 12px;
+            font-family: inherit;
+            font-size: 14px;
+            resize: none;
+            min-height: 44px;
+            max-height: 120px;
+        }
+
+        textarea:focus {
+            outline: none;
+            border-color: #007AFF;
+        }
+
+        .send-btn {
+            background: #007AFF;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 12px 20px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+
+        .commands {
+            font-size: 12px;
+            color: #999;
+            margin-top: 8px;
+        }
+
+        .memory-indicator {
+            font-size: 12px;
+            color: #007AFF;
+        }
+
+        .context-summary {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 16px;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="status-bar">
+        <div class="project-info">
+            <span>📚 <strong id="project-name">Epistemología Clínica</strong></span>
+            <span>🔄 <span id="current-status">Desarrollando Sección IV</span></span>
+            <span class="memory-indicator">💾 <span id="memory-size">12.3KB</span> contexto</span>
+        </div>
+        <div class="role-switcher">
+            <button class="role-btn active" data-role="researcher">🎓 RESEARCHER</button>
+            <button class="role-btn" data-role="critic">🔍 CRITIC</button>
+            <button class="role-btn" data-role="editor">📝 EDITOR</button>
+            <button class="role-btn" data-role="coordinator">🎛️ COORDINATOR</button>
+        </div>
+    </div>
+
+    <div class="conversation-area" id="conversation">
+        <div class="context-summary">
+            <strong>📋 Contexto Recuperado</strong><br>
+            Proyecto: Epistemología Clínica | Rol: RESEARCHER | Última actualización: hace 2 min<br>
+            Estado: Sección IV necesita reestructuración completa según evaluación CRITIC
+        </div>
+        
+        <div class="message assistant">
+            <strong>🎓 RESEARCHER</strong><br>
+            Perfecto, continuemos con la reestructuración de la Sección IV. Basándome en la evaluación del CRITIC, necesitamos fortalecer la fundamentación teórica y establecer conexiones más sólidas. ¿Por dónde quieres que empecemos?
+        </div>
+    </div>
+
+    <div class="input-area">
+        <div class="input-container">
+            <textarea 
+                id="message-input" 
+                placeholder="Continuar desarrollo de Sección IV..."
+                rows="1"
+            ></textarea>
+            <button class="send-btn" id="send-btn">Enviar</button>
+        </div>
+        <div class="commands">
+            Comandos: @switch [rol] | @continue [sección] | @status | @save | @load
+        </div>
+    </div>
+
+    <script>
+        class ClaudeTerminalZen {
+            constructor() {
+                this.currentRole = 'researcher';
+                this.projectData = {
+                    name: 'Epistemología Clínica',
+                    status: 'Desarrollando Sección IV',
+                    context: [],
+                    memory: 0
+                };
+                this.init();
+            }
+
+            init() {
+                this.loadFromStorage();
+                this.setupEventListeners();
+                this.updateUI();
+            }
+
+            setupEventListeners() {
+                // Role switching
+                document.querySelectorAll('.role-btn').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        this.switchRole(e.target.dataset.role);
+                    });
+                });
+
+                // Send message
+                document.getElementById('send-btn').addEventListener('click', () => {
+                    this.sendMessage();
+                });
+
+                // Auto-resize textarea
+                const textarea = document.getElementById('message-input');
+                textarea.addEventListener('input', () => {
+                    textarea.style.height = 'auto';
+                    textarea.style.height = Math.min(textarea.scrollHeight, 120) + 'px';
+                });
+
+                // Enter to send (Shift+Enter for new line)
+                textarea.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        this.sendMessage();
+                    }
+                });
+
+                // Auto-save every 30 seconds
+                setInterval(() => {
+                    this.saveToStorage();
+                }, 30000);
+
+                // Save on page unload
+                window.addEventListener('beforeunload', () => {
+                    this.saveToStorage();
+                });
+            }
+
+            switchRole(role) {
+                this.currentRole = role;
+                
+                // Update UI
+                document.querySelectorAll('.role-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.querySelector(`[data-role="${role}"]`).classList.add('active');
+
+                // Add role switch message
+                this.addMessage('system', `🔄 Cambiado a rol ${this.getRoleEmoji(role)} ${role.toUpperCase()}`);
+                this.saveToStorage();
+            }
+
+            getRoleEmoji(role) {
+                const emojis = {
+                    researcher: '🎓',
+                    critic: '🔍',
+                    editor: '📝',
+                    coordinator: '🎛️'
+                };
+                return emojis[role] || '🤖';
+            }
+
+            sendMessage() {
+                const input = document.getElementById('message-input');
+                const message = input.value.trim();
+                
+                if (!message) return;
+
+                // Handle commands
+                if (message.startsWith('@')) {
+                    this.handleCommand(message);
+                } else {
+                    this.addMessage('user', message);
+                    this.simulateAIResponse(message);
+                }
+
+                input.value = '';
+                input.style.height = 'auto';
+                this.saveToStorage();
+            }
+
+            handleCommand(command) {
+                const [cmd, ...args] = command.slice(1).split(' ');
+                
+                switch(cmd) {
+                    case 'switch':
+                        if (args[0]) {
+                            this.switchRole(args[0]);
+                        }
+                        break;
+                    case 'status':
+                        this.showStatus();
+                        break;
+                    case 'save':
+                        this.saveToStorage();
+                        this.addMessage('system', '💾 Contexto guardado correctamente');
+                        break;
+                    case 'load':
+                        this.loadFromStorage();
+                        this.addMessage('system', '📂 Contexto cargado correctamente');
+                        break;
+                    default:
+                        this.addMessage('system', `❌ Comando desconocido: ${cmd}`);
+                }
+            }
+
+            simulateAIResponse(userMessage) {
+                // Simulate AI response based on role
+                setTimeout(() => {
+                    const responses = {
+                        researcher: "Continuando con el desarrollo académico...",
+                        critic: "Evaluando críticamente el contenido...",
+                        editor: "Refinando el texto y estructura...",
+                        coordinator: "Consolidando elementos del proyecto..."
+                    };
+                    
+                    this.addMessage('assistant', 
+                        `${this.getRoleEmoji(this.currentRole)} ${this.currentRole.toUpperCase()}\n\n${responses[this.currentRole]}`
+                    );
+                    this.saveToStorage();
+                }, 1000);
+            }
+
+            addMessage(type, content) {
+                const conversation = document.getElementById('conversation');
+                const messageDiv = document.createElement('div');
+                messageDiv.className = `message ${type}`;
+                messageDiv.innerHTML = content.replace(/\n/g, '<br>');
+                
+                conversation.appendChild(messageDiv);
+                conversation.scrollTop = conversation.scrollHeight;
+
+                // Add to context
+                this.projectData.context.push({
+                    type,
+                    content,
+                    timestamp: new Date().toISOString(),
+                    role: this.currentRole
+                });
+
+                this.updateMemoryIndicator();
+            }
+
+            showStatus() {
+                const status = `
+📊 Estado del Proyecto: ${this.projectData.name}
+🔄 Rol Activo: ${this.getRoleEmoji(this.currentRole)} ${this.currentRole.toUpperCase()}
+💾 Contexto: ${this.projectData.context.length} mensajes
+📏 Memoria: ${this.formatBytes(JSON.stringify(this.projectData).length)}
+⏰ Última actualización: ${new Date().toLocaleTimeString()}
+                `;
+                this.addMessage('system', status);
+            }
+
+            updateMemoryIndicator() {
+                const size = JSON.stringify(this.projectData).length;
+                document.getElementById('memory-size').textContent = this.formatBytes(size);
+            }
+
+            formatBytes(bytes) {
+                if (bytes === 0) return '0 B';
+                const k = 1024;
+                const sizes = ['B', 'KB', 'MB'];
+                const i = Math.floor(Math.log(bytes) / Math.log(k));
+                return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+            }
+
+            saveToStorage() {
+                localStorage.setItem('claude-terminal-zen', JSON.stringify(this.projectData));
+                console.log('💾 Contexto guardado automáticamente');
+            }
+
+            loadFromStorage() {
+                const saved = localStorage.getItem('claude-terminal-zen');
+                if (saved) {
+                    this.projectData = JSON.parse(saved);
+                    this.restoreConversation();
+                }
+            }
+
+            restoreConversation() {
+                const conversation = document.getElementById('conversation');
+                conversation.innerHTML = `
+                    <div class="context-summary">
+                        <strong>📋 Contexto Recuperado</strong><br>
+                        Proyecto: ${this.projectData.name} | Contexto: ${this.projectData.context.length} mensajes<br>
+                        Última sesión restaurada correctamente
+                    </div>
+                `;
+
+                // Restore last few messages
+                const recentMessages = this.projectData.context.slice(-10);
+                recentMessages.forEach(msg => {
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = `message ${msg.type}`;
+                    messageDiv.innerHTML = msg.content.replace(/\n/g, '<br>');
+                    conversation.appendChild(messageDiv);
+                });
+
+                conversation.scrollTop = conversation.scrollHeight;
+                this.updateMemoryIndicator();
+            }
+
+            updateUI() {
+                document.getElementById('project-name').textContent = this.projectData.name;
+                document.getElementById('current-status').textContent = this.projectData.status;
+            }
+        }
+
+        // Initialize when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            new ClaudeTerminalZen();
+        });
+
+        // Register service worker
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js');
+        }
+    </script>
+</body>
+</html>
